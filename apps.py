@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 st.set_page_config(page_title="10-Year Fundamental Analysis & DCF Model", layout="wide")
 
 st.title("📊 10-Year Fundamental Analysis & DCF Valuation Model")
-st.markdown("Enter Screener.in URL to analyze Income Statement, Balance Sheet, Cash Flow, Ratios, Piotroski F-Score, and 10-Year DCF Projections with YoY Growth.")
+st.markdown("Enter Screener.in URL to calculate accurate COGS, SG&A, YoY Growth, and 10-Year DCF Projections.")
 
 url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/company/TCS/consolidated/")
 
@@ -83,7 +83,7 @@ def compute_yoy_dataframe(data_arrays, index_labels, years):
         index_with_yoy.append(f"{label} (YoY %)")
     return pd.DataFrame(rows, columns=years, index=index_with_yoy)
 
-if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
+if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
     try:
         meta, tables = fetch_screener_data(url)
         pnl = tables["profit-loss"]
@@ -93,23 +93,22 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         n = len(years)
 
         def get_row(df, candidates, default=0.0):
+            found_arr = None
             for label in candidates:
                 for idx in df.index:
                     if label.lower() in idx.lower():
-                        return df.loc[idx].astype(float).values
+                        arr = df.loc[idx].astype(float).values
+                        if found_arr is None:
+                            found_arr = arr
+                        else:
+                            found_arr += arr
+            if found_arr is not None:
+                return found_arr
             return np.full(n, default, dtype=float)
 
         sales = get_row(pnl, ["Sales", "Revenue"])
-        raw_mat = get_row(pnl, ["Raw Material"])
-        power = get_row(pnl, ["Power"])
-        employee = get_row(pnl, ["Employee"])
-        other_mfr = get_row(pnl, ["Other Mfr"])
-        cogs_items = raw_mat + power + employee + other_mfr
-        
-        selling = get_row(pnl, ["Selling"])
-        other_exp = get_row(pnl, ["Other Expenses"])
-        sga_items = selling + other_exp
-        
+        cogs_items = get_row(pnl, ["Raw Material", "Power", "Fuel", "Manufacturing", "Purchase of Stock"])
+        sga_items = get_row(pnl, ["Employee Cost", "Selling", "Distribution", "Administration", "Rent", "General"])
         op_profit = get_row(pnl, ["Operating Profit", "Financing Profit"])
         other_inc = get_row(pnl, ["Other Income"])
         depr = get_row(pnl, ["Depreciation"])
@@ -124,7 +123,7 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         eq_cap = get_row(bs, ["Equity Capital"])
         reserves = get_row(bs, ["Reserves"])
         total_equity = eq_cap + reserves
-        total_debt = get_row(bs, ["Borrowings"])
+        total_debt = get_row(bs, ["Borrowings", "Debt"])
         other_liab = get_row(bs, ["Other Liabilities"])
         total_assets = get_row(bs, ["Total Assets"])
         fix_assets = get_row(bs, ["Fixed Assets", "Net Block"])
@@ -144,7 +143,6 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         pe_ratio = np.divide(meta.get("Market Cap", 0.0), pat, out=np.zeros(n), where=pat!=0)
         pb_ratio = np.divide(meta.get("Market Cap", 0.0), total_equity, out=np.zeros(n), where=total_equity!=0)
         op_margin = np.divide(op_profit, sales, out=np.zeros(n), where=sales!=0)
-        net_margin = np.divide(pat, sales, out=np.zeros(n), where=sales!=0)
         roe = np.divide(pat, total_equity, out=np.zeros(n), where=total_equity!=0)
         roce = np.divide(op_profit, (total_assets - other_liab), out=np.zeros(n), where=(total_assets-other_liab)!=0)
         roic = np.divide(nopat, invested_cap, out=np.zeros(n), where=invested_cap!=0)
@@ -186,7 +184,7 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Model Generated Successfully!")
+        st.success("✅ Enhanced Model Generated Successfully!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")
@@ -194,7 +192,7 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         c3.metric("Margin of Safety", f"{mos:+.1%}")
         c4.metric("10-Yr Cum FCFF", f"₹{np.sum(fcff):,.0f} Cr")
 
-        pnl_df = compute_yoy_dataframe([sales, cogs_items, sga_items, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat], ["Revenue", "COGS", "SG&A", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Tax Rate (%)", "NOPAT", "Net Income"], years)
+        pnl_df = compute_yoy_dataframe([sales, cogs_items, sga_items, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat], ["Revenue", "COGS (Calculated)", "SG&A (Calculated)", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Tax Rate (%)", "NOPAT", "Net Income"], years)
         bs_df = compute_yoy_dataframe([total_debt, total_equity, total_assets, cash_investments, invested_cap], ["Total Debt", "Total Equity", "Total Assets", "Cash & Investments", "Invested Capital"], years)
         cf_df = compute_yoy_dataframe([cfo, capex, fcff], ["CFO", "CapEx", "Free Cash Flow (FCFF)"], years)
 

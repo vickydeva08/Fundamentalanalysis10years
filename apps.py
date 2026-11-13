@@ -107,8 +107,11 @@ if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
             return np.full(n, default, dtype=float)
 
         sales = get_row(pnl, ["Sales", "Revenue"])
-        cogs_items = get_row(pnl, ["Raw Material", "Power", "Fuel", "Manufacturing", "Purchase of Stock"])
-        sga_items = get_row(pnl, ["Employee Cost", "Selling", "Distribution", "Administration", "Rent", "General"])
+        
+        # Comprehensive keywords for COGS and SG&A
+        cogs_items = get_row(pnl, ["material", "raw", "power", "fuel", "manufacturing", "purchase", "production", "direct", "goods", "cost of"])
+        sga_items = get_row(pnl, ["employee", "selling", "distribution", "admin", "rent", "general", "salary", "wages", "other expense"])
+        
         op_profit = get_row(pnl, ["Operating Profit", "Financing Profit"])
         other_inc = get_row(pnl, ["Other Income"])
         depr = get_row(pnl, ["Depreciation"])
@@ -185,7 +188,7 @@ if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Enhanced Model Generated Successfully!")
+        st.success("✅ Enhanced Model Generated Successfully[cite: 1]!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")

@@ -1,5 +1,3 @@
-11.12 7:58 PM
-apps.py
 import re
 import requests
 from bs4 import BeautifulSoup
@@ -8,6 +6,8 @@ import numpy as np
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
+
+
 def parse_screener_tables(url: str) -> dict:
     """Scrapes P&L, Balance Sheet, Cash Flow, and top ratios from a Screener.in URL."""
     headers = {
@@ -17,6 +17,7 @@ def parse_screener_tables(url: str) -> dict:
     resp = requests.get(url, headers=headers, timeout=20)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
+
     # Extract top ratio cards (Market Cap, Current Price, Stock P/E, Book Value, etc.)
     meta = {}
     for li in soup.select("#top-ratios li"):
@@ -29,6 +30,7 @@ def parse_screener_tables(url: str) -> dict:
                 meta[key] = float(raw_val)
             except ValueError:
                 meta[key] = raw_val
+
     # Extract section tables
     sections = {}
     for sec_id in ["profit-loss", "balance-sheet", "cash-flow", "ratios"]:
@@ -38,6 +40,7 @@ def parse_screener_tables(url: str) -> dict:
         table = sec.find("table")
         if not table:
             continue
+
         cols = [th.get_text(strip=True) for th in table.select("thead th")]
         cols[0] = "Metric"
         rows = []
@@ -56,11 +59,15 @@ def parse_screener_tables(url: str) -> dict:
                 except ValueError:
                     parsed_row.append(0.0)
             rows.append(parsed_row)
+
         df = pd.DataFrame(rows, columns=cols).set_index("Metric")
         # Keep up to the latest 10 completed fiscal years (exclude TTM if present)
         fy_cols = [c for c in df.columns if c.upper() != "TTM"][-10:]
         sections[sec_id] = df[fy_cols]
+
     return {"meta": meta, "tables": sections}
+
+
 def get_row(df: pd.DataFrame, candidates: list, default=0.0) -> np.ndarray:
     """Safely fetches the first matching row label from a parsed Screener table."""
     for label in candidates:
@@ -68,6 +75,8 @@ def get_row(df: pd.DataFrame, candidates: list, default=0.0) -> np.ndarray:
             if label.lower() in idx.lower():
                 return df.loc[idx].astype(float).values
     return np.full(df.shape[1], default, dtype=float)
+
+
 def run_automated_valuation(
     screener_url: str,
     wacc: float = 0.125,
@@ -82,8 +91,10 @@ def run_automated_valuation(
     pnl = scraped["tables"]["profit-loss"]
     bs = scraped["tables"]["balance-sheet"]
     cf = scraped["tables"]["cash-flow"]
+
     years = list(pnl.columns)
     n = len(years)
+
     # 1. Income Statement Extraction
     sales = get_row(pnl, ["Sales", "Revenue"])
     op_profit = get_row(pnl, ["Operating Profit", "Financing Profit"])
@@ -93,10 +104,12 @@ def run_automated_valuation(
     pbt = get_row(pnl, ["Profit before tax"])
     tax_pct = get_row(pnl, ["Tax %"])
     pat = get_row(pnl, ["Net Profit"])
+
     ebitda = op_profit + depr
     ebit = op_profit
     eff_tax = np.where(tax_pct > 1, tax_pct / 100.0, tax_pct)
     nopat = ebit * (1.0 - eff_tax)
+
     # 2. Balance Sheet & Invested Capital
     eq_cap = get_row(bs, ["Equity Capital"])
     reserves = get_row(bs, ["Reserves"])
@@ -108,8 +121,10 @@ def run_automated_valuation(
     cwip = get_row(bs, ["CWIP"])
     investments = get_row(bs, ["Investments"])
     other_assets = get_row(bs, ["Other Assets"])
+
     # Screener web table aggregates Cash inside Other Assets; use Cash & Investments if expanded
     invested_cap = total_equity + total_debt - investments
+
     # 3. Cash Flow & FCFF
     cfo = get_row(cf, ["Cash from Operating Activity"])
     cfi = get_row(cf, ["Cash from Investing Activity"])
@@ -118,6 +133,7 @@ def run_automated_valuation(
     for i in range(1, n):
         capex[i] = max((fixed_assets[i] + cwip[i]) - (fixed_assets[i - 1] + cwip[i - 1]) + depr[i], 0.0)
     fcff = cfo - capex
+
     # 4. Ratios & Forensic Metrics
     op_margin = np.divide(ebit, sales, out=np.zeros_like(ebit), where=sales != 0)
     net_margin = np.divide(pat, sales, out=np.zeros_like(pat), where=sales != 0)
@@ -125,6 +141,7 @@ def run_automated_valuation(
     roce = np.divide(ebit, (total_assets - other_liab), out=np.zeros_like(ebit), where=(total_assets - other_liab) != 0)
     roic = np.divide(nopat, invested_cap, out=np.zeros_like(nopat), where=invested_cap != 0)
     accrual_ratio = np.divide((pat - cfo), total_assets, out=np.zeros_like(pat), where=total_assets != 0)
+
     # 5. 10-Year Multi-Stage DCF Model
     base_fcff = fcff[-1]
     proj_fcff = []
@@ -133,26 +150,32 @@ def run_automated_valuation(
         g = stage1_g if yr <= 5 else stage2_g
         curr *= (1.0 + g)
         proj_fcff.append(curr)
+
     pv_fcff = [f / ((1.0 + wacc) ** idx) for idx, f in enumerate(proj_fcff, 1)]
     sum_pv_fcf = sum(pv_fcff)
     term_val = proj_fcff[-1] * (1.0 + term_g) / (wacc - term_g)
     pv_tv = term_val / ((1.0 + wacc) ** 10)
     enterprise_val = sum_pv_fcf + pv_tv
+
     net_debt = total_debt[-1] - investments[-1]
     equity_val = enterprise_val - net_debt
+
     cmp = float(meta.get("Current Price", 0.0))
     mcap = float(meta.get("Market Cap", 0.0))
     shares_cr = (mcap / cmp) if (cmp > 0 and mcap > 0) else (eq_cap[-1] / 1.0)
     fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
     mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
+
     # 6. Export 5-Tab Styled Excel Workbook
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
+
     navy = "1B365D"
     font_title = Font(name="Calibri", size=13, bold=True, color=navy)
     font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
     font_bold = Font(name="Calibri", size=11, bold=True)
+
     # TAB 1: Executive Summary
     ws1 = wb.create_sheet("Executive Summary")
     ws1["A1"] = f"{ticker} — AUTOMATED 10-YEAR FUNDAMENTAL & DCF SUMMARY"
@@ -162,9 +185,11 @@ def run_automated_valuation(
     for c in range(1, 4):
         ws1.cell(3, c).font = font_hdr
         ws1.cell(3, c).fill = fill_hdr
+
     rev_cagr = (sales[-1] / sales[0]) ** (1 / (n - 1)) - 1 if sales[0] > 0 else 0
     nopat_cagr = (nopat[-1] / nopat[0]) ** (1 / (n - 1)) - 1 if nopat[0] > 0 else 0
     cfo_pat = np.sum(cfo) / np.sum(pat) if np.sum(pat) > 0 else 0
+
     t1_rows = [
         ["Current Market Price (CMP)", cmp, f"Live Screener CMP for {ticker}"],
         ["DCF Intrinsic Fair Value / Share", fair_value, f"WACC {wacc:.1%}, Term g {term_g:.1%}"],
@@ -185,6 +210,7 @@ def run_automated_valuation(
             cell.number_format = '"₹"#,##0'
         else:
             cell.number_format = "0.0%"
+
     # TAB 2: Historical Financials
     ws2 = wb.create_sheet("Historical Financials")
     ws2["A1"] = f"{ticker} — HISTORICAL FINANCIAL DATA ({years[0]} – {years[-1]}) [₹ Cr]"
@@ -194,6 +220,7 @@ def run_automated_valuation(
     for c in range(1, n + 2):
         ws2.cell(3, c).font = font_hdr
         ws2.cell(3, c).fill = fill_hdr
+
     hist_table = [
         ["Revenue"] + list(sales),
         ["EBITDA"] + list(ebitda),
@@ -216,6 +243,7 @@ def run_automated_valuation(
         ws2.cell(r_i, 1).font = font_bold
         for c in range(2, n + 2):
             ws2.cell(r_i, c).number_format = "0.0%" if r_i == 8 else "#,##0"
+
     # TAB 3: Ratios & Forensics
     ws3 = wb.create_sheet("Ratios & Forensics")
     ws3["A1"] = f"{ticker} — RATIOS & FORENSIC METRICS ({years[0]} – {years[-1]})"
@@ -225,6 +253,7 @@ def run_automated_valuation(
     for c in range(1, n + 5):
         ws3.cell(3, c).font = font_hdr
         ws3.cell(3, c).fill = fill_hdr
+
     ratio_rows = [
         ("Operating Margin %", op_margin),
         ("Net Margin %", net_margin),
@@ -239,6 +268,7 @@ def run_automated_valuation(
         ws3.cell(r_i, 1).font = font_bold
         for c in range(2, n + 5):
             ws3.cell(r_i, c).number_format = "0.00%" if label == "Accrual Ratio" else "0.0%"
+
     # TAB 4: DCF Model
     ws4 = wb.create_sheet("DCF Valuation")
     ws4["A1"] = f"{ticker} — 10-YEAR DCF VALUATION MODEL"
@@ -249,6 +279,7 @@ def run_automated_valuation(
     ws4.cell(3, 2).font = font_hdr
     ws4.cell(3, 1).fill = fill_hdr
     ws4.cell(3, 2).fill = fill_hdr
+
     dcf_summary = [
         ["WACC", wacc],
         ["Stage 1 Growth (Y1-Y5)", stage1_g],
@@ -275,6 +306,7 @@ def run_automated_valuation(
             c.number_format = '"₹"#,##0.00'
         else:
             c.number_format = "#,##0.00"
+
     # TAB 5: Google Sheets Blueprint
     ws5 = wb.create_sheet("Sheets Blueprint")
     ws5["A1"] = "GOOGLE SHEETS FORMULAS & FORMATTING BLUEPRINT"
@@ -289,14 +321,17 @@ def run_automated_valuation(
     ws5.append(["NOPAT", "=EBIT*(1-Effective_Tax_Rate)", "Net Operating Profit After Tax"])
     ws5.append(["ROIC", "=NOPAT/Invested_Capital", "Return on Invested Capital"])
     ws5.append(["Margin of Safety", "=(Fair_Value-CMP)/Fair_Value", "Green >=15%, Yellow -15%..15%, Red <-15%"])
+
     for sheet in wb.worksheets:
         for col in sheet.columns:
             max_len = max(len(str(cell.value or "")) for cell in col)
             sheet.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 4, 14)
+
     out_file = f"{ticker}_10Year_Fundamental_Analysis_and_DCF_Model.xlsx"
     wb.save(out_file)
     print(f"Saved complete 5-tab model to: {out_file}")
     print(f"{ticker} CMP: ₹{cmp:,.2f} | DCF Fair Value: ₹{fair_value:,.2f} | Margin of Safety: {mos:.1%}")
+
+
 if __name__ == "__main__":
     run_automated_valuation("https://www.screener.in/company/ITC/consolidated/")
-

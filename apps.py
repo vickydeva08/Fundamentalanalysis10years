@@ -200,41 +200,4 @@ if st.button("🚀 Run Valuation Model", type="primary"):
                 int(total_debt[i]/total_assets[i] < total_debt[i-1]/total_assets[i-1]) +
                 int(total_equity[i]/total_assets[i] > total_equity[i-1]/total_assets[i-1]) +
                 int(sales[i]/fix_assets[i] > sales[i-1]/fix_assets[i-1]) +
-                int(op_profit[i]/sales[i] > op_profit[i-1]/sales[i-1])
-            )
-            f_scores.append(score)
-        f_scores = [f_scores[0]] + f_scores
-
-        base_fcff = fcff[-1]
-        proj_fcff = []
-        curr = base_fcff
-        for yr in range(1, 11):
-            g = stage1_g if yr <= 5 else stage2_g
-            curr *= (1.0 + g)
-            proj_fcff.append(curr)
-
-        pv_fcff = [f / ((1.0 + wacc) ** idx) for idx, f in enumerate(proj_fcff, 1)]
-        sum_pv_fcf = sum(pv_fcff)
-        term_val = proj_fcff[-1] * (1.0 + term_g) / (wacc - term_g)
-        pv_tv = term_val / ((1.0 + wacc) ** 10)
-        enterprise_val = sum_pv_fcf + pv_tv
-        net_debt = total_debt[-1] - cash_investments[-1]
-        equity_val = enterprise_val - net_debt
-
-        cmp = float(meta.get("Current Price", 0.0))
-        mcap = float(meta.get("Market Cap", 0.0))
-        shares_cr = (mcap / cmp) if (cmp > 0 and mcap > 0) else (total_equity[-1] / 10.0)
-        fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
-        mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
-
-        st.success("✅ Model Generated Successfully[cite: 1]!")
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")
-        c2.metric("DCF Fair Value", f"₹{fair_value:,.2f}")
-        c3.metric("Margin of Safety", f"{mos:+.1%}")
-        c4.metric("10-Yr Cum FCFF", f"₹{np.sum(fcff):,.0f} Cr")
-
-        pnl_df = compute_yoy_dataframe(
-            [sales, expenses, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat, eps], 
-            ["Revenue", "Expenses",
+                int(op_profit[i]/sales[i] >

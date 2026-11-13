@@ -97,7 +97,7 @@ if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
             for label in candidates:
                 for idx in df.index:
                     if label.lower() in idx.lower():
-                        arr = df.loc[idx].astype(float).values
+                        arr = np.array(df.loc[idx].astype(float).values, dtype=float)
                         if found_arr is None:
                             found_arr = arr
                         else:
@@ -185,7 +185,7 @@ if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Enhanced Model Generated Successfully[cite: 1]!")
+        st.success("✅ Enhanced Model Generated Successfully!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")

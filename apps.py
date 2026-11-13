@@ -128,6 +128,18 @@ def compute_yoy_dataframe(data_arrays, index_labels, years):
         index_with_yoy.append(f"{label} (YoY/QoQ %)")
     return pd.DataFrame(rows, columns=years, index=index_with_yoy)
 
+def style_yoy_rows(df):
+    is_growth_row = df.index.str.contains("YoY/QoQ %")
+    return pd.DataFrame(
+        np.where(
+            np.column_stack([is_growth_row] * len(df.columns)),
+            'background-color: #FFF2CC',
+            ''
+        ),
+        index=df.index,
+        columns=df.columns
+    )
+
 if st.button("🚀 Run Valuation Model", type="primary"):
     try:
         meta, tables = fetch_screener_data(url)
@@ -263,16 +275,16 @@ if st.button("🚀 Run Valuation Model", type="primary"):
 
         tabs = st.tabs(["Income Statement (Annual)", "Last 10 Quarters", "Balance Sheet", "Cash Flow", "Promoter Holding", "Ratios & Forensic", "10-Yr DCF Projections"])
         with tabs[0]:
-            st.dataframe(pnl_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
+            st.dataframe(pnl_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A").apply(style_yoy_rows, axis=None))
         with tabs[1]:
             if not quarters.empty:
                 st.dataframe(quarters.style.format(lambda v: f"{v:,.2f}%" if isinstance(v, (int, float)) and not np.isnan(v) else str(v)))
             else:
                 st.info("Quarterly data not available for this URL.")
         with tabs[2]:
-            st.dataframe(bs_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
+            st.dataframe(bs_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A").apply(style_yoy_rows, axis=None))
         with tabs[3]:
-            st.dataframe(cf_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
+            st.dataframe(cf_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A").apply(style_yoy_rows, axis=None))
         with tabs[4]:
             st.subheader("👥 Shareholding / Promoter Holding Pattern (%)")
             if not shareholding.empty:
@@ -297,7 +309,6 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
         
-        # Highlight fill for Growth rows (Light Soft Yellow/Gray)
         fill_growth = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
         font_growth = Font(name="Calibri", size=11, bold=True)
         align_center = Alignment(horizontal="center", vertical="center")
@@ -315,7 +326,6 @@ if st.button("🚀 Run Valuation Model", type="primary"):
                 row_data = [str(idx)] + [float(val) if isinstance(val, (int, float)) and not np.isnan(val) else str(val) for val in row.values]
                 sheet.append(row_data)
                 
-                # Apply highlight if it's a growth row
                 if "YoY/QoQ %" in str(idx):
                     row_num = sheet.max_row
                     for col_num in range(1, len(row_data) + 1):
@@ -323,7 +333,6 @@ if st.button("🚀 Run Valuation Model", type="primary"):
                         current_cell.fill = fill_growth
                         current_cell.font = font_growth
 
-        # Create separate sheets
         sheets_info = [
             ("Income Statement (Annual)", pnl_df),
             ("Last 10 Quarters", quarters),
@@ -336,7 +345,7 @@ if st.button("🚀 Run Valuation Model", type="primary"):
 
         for title, df in sheets_info:
             if not df.empty:
-                ws = wb.create_sheet(title=title[:31]) # Excel sheet name limit is 31 chars
+                ws = wb.create_sheet(title=title[:31])
                 write_df_to_sheet(ws, df, title)
 
         excel_buffer = io.BytesIO()

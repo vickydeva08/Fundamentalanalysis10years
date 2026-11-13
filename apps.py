@@ -7,15 +7,10 @@ import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
-# st.set_page_config MUST be the very first Streamlit command
-st.set_page_config(
-    page_title="10-Year Fundamental Analysis & DCF Model",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="10-Year Fundamental Analysis & DCF Model", page_layout="wide")
 
 st.title("📊 10-Year Fundamental Analysis & DCF Valuation Model")
-st.markdown("Enter Screener.in URL to analyze Income Statement, Balance Sheet, Cash Flow, Ratios, Piotroski F-Score, and 10-Year DCF Projections.")
+st.markdown("Enter Screener.in URL to analyze Income Statement, Balance Sheet, Cash Flow, Ratios, Piotroski F-Score, and 10-Year DCF Projections with YoY Growth.")
 
 url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/company/TCS/consolidated/")
 
@@ -72,6 +67,32 @@ def fetch_screener_data(screener_url):
 
     return meta, tables
 
+def compute_yoy_dataframe(data_arrays, index_labels, years, is_percentage=False):
+    """Creates a DataFrame where each metric is followed immediately by its YoY % change row."""
+    rows = []
+    index_with_yoy = []
+    
+    for label, arr in zip(index_labels, data_arrays):
+        # Append base metric row
+        rows.append(arr)
+        index_with_yoy.append(label)
+        
+        # Calculate YoY % change
+        yoy = []
+        for i in range(len(arr)):
+            if i == 0 or np.isnan(arr[i-1]) or arr[i-1] == 0:
+                yoy.append(np.nan)
+            else:
+                val_change = (arr[i] - arr[i-1]) / abs(arr[i-1]) * 100.0
+                yoy.append(val_change)
+        
+        # Append YoY row
+        rows.append(yoy)
+        index_with_yoy.append(f"{label} (YoY %)")
+        
+    df = pd.DataFrame(rows, columns=years, index=index_with_yoy)
+    return df
+
 if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
     try:
         meta, tables = fetch_screener_data(url)
@@ -88,9 +109,18 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
                         return df.loc[idx].astype(float).values
             return np.full(n, default, dtype=float)
 
+        # Extraction
         sales = get_row(pnl, ["Sales", "Revenue"])
-        cogs_items = get_row(pnl, ["Raw Material"]) + get_row(pnl, ["Power"]) + get_row(pnl, ["Employee"])
-        sga_items = get_row(pnl, ["Selling"]) + get_row(pnl, ["Other Mfr"]) + get_row(pnl, ["Other Expenses"])
+        raw_mat = get_row(pnl, ["Raw Material"])
+        power = get_row(pnl, ["Power"])
+        employee = get_row(pnl, ["Employee"])
+        other_mfr = get_row(pnl, ["Other Mfr"])
+        cogs_items = raw_mat + power + employee + other_mfr
+        
+        selling = get_row(pnl, ["Selling"])
+        other_exp = get_row(pnl, ["Other Expenses"])
+        sga_items = selling + other_exp
+        
         op_profit = get_row(pnl, ["Operating Profit", "Financing Profit"])
         other_inc = get_row(pnl, ["Other Income"])
         depr = get_row(pnl, ["Depreciation"])
@@ -168,7 +198,7 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Comprehensive Model Generated Successfully!")
+        st.success("✅ Comprehensive Model Generated Successfully with YoY Changes!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")
@@ -176,15 +206,32 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         c3.metric("Margin of Safety", f"{mos:+.1%}")
         c4.metric("10-Yr Cum FCFF", f"₹{np.sum(fcff):,.0f} Cr")
 
+        # Build YoY DataFrames
+        pnl_df = compute_yoy_dataframe(
+            [sales, cogs_items, sga_items, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat],
+            ["Revenue", "COGS", "SG&A", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Tax Rate (%)", "NOPAT", "Net Income"],
+            years
+        )
+        
+        bs_df = compute_yoy_dataframe(
+            [total_debt, total_equity, total_assets, cash_investments, invested_cap],
+            ["Total Debt", "Total Equity", "Total Assets", "Cash & Investments", "Invested Capital"],
+            years
+        )
+        
+        cf_df = compute_yoy_dataframe(
+            [cfo, capex, fcff],
+            ["CFO", "CapEx", "Free Cash Flow (FCFF)"],
+            years
+        )
+
         tabs = st.tabs(["Income Statement", "Balance Sheet", "Cash Flow", "Ratios & Forensic", "10-Yr DCF Projections"])
         with tabs[0]:
-            st.dataframe(pd.DataFrame([sales, cogs_items, sga_items, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat], 
-                                      index=["Revenue", "COGS", "SG&A", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Tax Rate (%)", "NOPAT", "Net Income"], columns=years).style.format("{:,.2f}"))
+            st.dataframe(pnl_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
         with tabs[1]:
-            st.dataframe(pd.DataFrame([total_debt, total_equity, total_assets, cash_investments, invested_cap], 
-                                      index=["Total Debt", "Total Equity", "Total Assets", "Cash & Investments", "Invested Capital"], columns=years).style.format("{:,.2f}"))
+            st.dataframe(bs_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
         with tabs[2]:
-            st.dataframe(pd.DataFrame([cfo, capex, fcff], index=["CFO", "CapEx", "Free Cash Flow (FCFF)"], columns=years).style.format("{:,.2f}"))
+            st.dataframe(cf_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
         with tabs[3]:
             st.dataframe(pd.DataFrame([pe_ratio, pb_ratio, op_margin*100, roe*100, roce*100, roic*100, accrual_ratio, f_scores], 
                                       index=["P/E Ratio", "P/B Ratio", "Operating Margin (%)", "ROE (%)", "ROCE (%)", "ROIC (%)", "Accrual Ratio", "Piotroski F-Score"], columns=years).style.format("{:,.2f}"))
@@ -192,6 +239,7 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
             proj_years = [f"FY{int(years[-1][-2:]) + i}" for i in range(1, 11)]
             st.dataframe(pd.DataFrame([proj_fcff, pv_fcff], index=["Projected FCFF", "Present Value"], columns=proj_years).style.format("{:,.2f}"))
 
+        # Excel Export Setup
         wb = openpyxl.Workbook()
         wb.remove(wb.active)
         navy = "1B365D"

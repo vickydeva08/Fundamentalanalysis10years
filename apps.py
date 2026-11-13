@@ -140,13 +140,14 @@ if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
             capex[i] = max((fix_assets[i] + cwip[i]) - (fix_assets[i-1] + cwip[i-1]) + depr[i], 0.0)
         fcff = cfo - capex
 
-        pe_ratio = np.divide(meta.get("Market Cap", 0.0), pat, out=np.zeros(n), where=pat!=0)
-        pb_ratio = np.divide(meta.get("Market Cap", 0.0), total_equity, out=np.zeros(n), where=total_equity!=0)
-        op_margin = np.divide(op_profit, sales, out=np.zeros(n), where=sales!=0)
-        roe = np.divide(pat, total_equity, out=np.zeros(n), where=total_equity!=0)
-        roce = np.divide(op_profit, (total_assets - other_liab), out=np.zeros(n), where=(total_assets-other_liab)!=0)
-        roic = np.divide(nopat, invested_cap, out=np.zeros(n), where=invested_cap!=0)
-        accrual_ratio = np.divide((pat - cfo), total_assets, out=np.zeros(n), where=total_assets!=0)
+        mcap_val = float(meta.get("Market Cap", 0.0))
+        pe_ratio = np.where(pat != 0, mcap_val / pat, 0.0)
+        pb_ratio = np.where(total_equity != 0, mcap_val / total_equity, 0.0)
+        op_margin = np.where(sales != 0, op_profit / sales, 0.0)
+        roe = np.where(total_equity != 0, pat / total_equity, 0.0)
+        roce = np.where((total_assets - other_liab) != 0, op_profit / (total_assets - other_liab), 0.0)
+        roic = np.where(invested_cap != 0, nopat / invested_cap, 0.0)
+        accrual_ratio = np.where(total_assets != 0, (pat - cfo) / total_assets, 0.0)
 
         f_scores = []
         for i in range(1, n):
@@ -184,7 +185,7 @@ if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Enhanced Model Generated Successfully!")
+        st.success("✅ Enhanced Model Generated Successfully[cite: 1]!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")

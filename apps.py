@@ -7,7 +7,12 @@ import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
-st.set_page_config(page_title="10-Year Fundamental Analysis & DCF Model", page_layout="wide")
+# st.set_page_config MUST be the very first Streamlit command
+st.set_page_config(
+    page_title="10-Year Fundamental Analysis & DCF Model",
+    page_icon="📊",
+    layout="wide"
+)
 
 st.title("📊 10-Year Fundamental Analysis & DCF Valuation Model")
 st.markdown("Enter Screener.in URL to analyze Income Statement, Balance Sheet, Cash Flow, Ratios, Piotroski F-Score, and 10-Year DCF Projections.")
@@ -123,7 +128,7 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         net_margin = np.divide(pat, sales, out=np.zeros(n), where=sales!=0)
         roe = np.divide(pat, total_equity, out=np.zeros(n), where=total_equity!=0)
         roce = np.divide(op_profit, (total_assets - other_liab), out=np.zeros(n), where=(total_assets-other_liab)!=0)
-        roic = np.divide(nopat, investigator_cap if 'investigator_cap' in locals() else invested_cap, out=np.zeros(n), where=invested_cap!=0)
+        roic = np.divide(nopat, invested_cap, out=np.zeros(n), where=invested_cap!=0)
         accrual_ratio = np.divide((pat - cfo), total_assets, out=np.zeros(n), where=total_assets!=0)
 
         f_scores = []

@@ -181,7 +181,7 @@ def style_financial_table(df):
             if "YoY %" in idx:
                 df_styled.loc[idx] = 'background-color: #FFF2CC; font-weight: bold;'
         return df_styled
-    return df.style.apply(highlight_rows, axis=None).format(lambda v: f"{v:,.2f}" if isinstance(v, (int, float)) and not np.isnan(v) else str(v))
+    return df.style.apply(highlight_rows, axis=None).format(lambda v: f"{v:,.2f}" if isinstance(v, (int, float)) and not np.isnan(v) else "")
 
 if st.button("🚀 Run Advanced Valuation Model", type="primary"):
     try:
@@ -358,7 +358,7 @@ if st.button("🚀 Run Advanced Valuation Model", type="primary"):
                 cell.font = font_hdr; cell.fill = fill_hdr; cell.alignment = align_center
             
             for idx, row in df.iterrows():
-                row_data = [str(idx)] + [float(val) if isinstance(val, (int, float)) and not np.isnan(val) else str(val) for val in row.values]
+                row_data = [str(idx)] + [val if isinstance(val, (int, float)) and not np.isnan(val) else "" for val in row.values]
                 sheet.append(row_data)
                 row_num = sheet.max_row
                 if "YoY %" in str(idx):

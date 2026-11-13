@@ -211,7 +211,7 @@ if st.button("🚀 Run Advanced Valuation Model", type="primary"):
         pbt = get_row(pnl, ["Profit before tax"])
         tax_pct = get_row(pnl, ["Tax %"])
         pat = get_row(pnl, ["Net Profit"])
-        eps = get_row(pnl, ["Basic EPS", "EPS"])
+        eps = get_row(pnl, ["EPS in Rs", "Basic EPS", "EPS", "Earnings Per Share"])
 
         eff_tax = np.where(tax_pct > 1, tax_pct / 100.0, tax_pct)
         nopat = op_profit * (1.0 - eff_tax)
@@ -295,8 +295,8 @@ if st.button("🚀 Run Advanced Valuation Model", type="primary"):
         c3.metric("Margin of Safety", f"{mos:+.1%}")
         c4.metric("10-Yr Cum FCFF", f"₹{np.sum(fcff):,.0f} Cr")
 
-        pnl_base = pd.DataFrame([sales, expenses, op_profit, other_inc, depr, interest, pbt, pat], 
-                                index=["Revenue", "Expenses", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Net Profit"], columns=years)
+        pnl_base = pd.DataFrame([sales, expenses, op_profit, other_inc, depr, interest, pbt, pat, eps], 
+                                index=["Revenue", "Expenses", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Net Profit", "EPS"], columns=years)
         bs_base = pd.DataFrame([total_debt, total_equity, total_assets, cash_investments], 
                                index=["Total Debt", "Total Equity", "Total Assets", "Cash & Investments"], columns=years)
         cf_base = pd.DataFrame([cfo, capex, fcff], 

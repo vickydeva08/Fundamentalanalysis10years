@@ -7,12 +7,12 @@ import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
-st.set_page_config(page_title="Advanced 10-Year Fundamental Analysis Model", layout="wide")
+st.set_page_config(page_title="Comprehensive 10-Year Financial Analysis Model", layout="wide")
 
-st.title("📊 Advanced Financial Analysis & Valuation Model")
+st.title("📊 Comprehensive Financial Analysis, DCF & Promoter Model")
 st.markdown("Analyzes Annual Statements, Quarters, Balance Sheet, Cash Flow, Ratios, Promoter Holding, with YoY, CAGR, Mean, Median, Min, Max, and Multi-Sheet Excel Export.")
 
-url = st.text_input("Screener.in Company URL:", value="https://www.secner.in/company/TCS/consolidated/") # அல்லது சரியான URL கொடுக்கவும்
+url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/company/TCS/consolidated/")
 
 COL1, COL2, COL3, COL4 = st.columns(4)
 with COL1:
@@ -71,7 +71,6 @@ def fetch_screener_data(screener_url):
                 
         if rows:
             temp_df = pd.DataFrame(rows, columns=headers_list).set_index("Metric")
-            # Clean columns (remove TTM if present, keep last 10 years)
             valid_cols = [c for c in temp_df.columns if c.upper() != "TTM"]
             tables[sec_id] = temp_df[valid_cols[-10:]]
 
@@ -110,9 +109,230 @@ def compute_comprehensive_metrics(df):
                     cagr_val = ((last_val / first_val) ** (1.0 / n_periods) - 1.0) * 100.0
                 elif first_val < 0 and last_val > 0:
                     cagr_val = 100.0
-                else:
+                elif first_val == 0:
                     cagr_val = np.nan
+                else:
+                    cagr_val = -100.0 if last_val == 0 else np.nan
             else:
                 cagr_val = np.nan
         else:
-            mean_val, median_val, min_val, max_val, cagr_val = np
+            mean_val, median_val, min_val, max_val, cagr_val = np.nan, np.nan, np.nan, np.nan, np.nan
+
+        for metric_name, metric_val in [("Mean", mean_val), ("Median", median_val), ("CAGR (%)", cagr_val), ("Min", min_val), ("Max", max_val)]:
+            new_rows[f"{idx} ({metric_name})"] = [metric_val] * len(row)
+
+    return pd.DataFrame(new_rows, columns=df.columns).T
+
+def style_financial_table(df):
+    def highlight_rows(x):
+        df_styled = pd.DataFrame('', index=x.index, columns=x.columns)
+        for idx in x.index:
+            if "YoY %" in idx:
+                df_styled.loc[idx] = 'background-color: #FFF2CC; font-weight: bold;'
+            elif any(m in idx for m in ["Mean", "Median", "CAGR", "Min", "Max"]):
+                df_styled.loc[idx] = 'background-color: #E2EFDA; font-style: italic;'
+        return df_styled
+    return df.style.apply(highlight_rows, axis=None).format(lambda v: f"{v:,.2f}" if isinstance(v, (int, float)) and not np.isnan(v) else str(v))
+
+if st.button("🚀 Run Full Valuation Model", type="primary"):
+    try:
+        meta, tables = fetch_screener_data(url)
+        pnl = tables.get("profit-loss", pd.DataFrame())
+        bs = tables.get("balance-sheet", pd.DataFrame())
+        cf = tables.get("cash-flow", pd.DataFrame())
+        quarters = tables.get("quarters", pd.DataFrame())
+        shareholding = tables.get("shareholding", pd.DataFrame())
+        
+        if pnl.empty:
+            st.error("Could not fetch data. Please check the URL or Screener structure.")
+        else:
+            years = list(pnl.columns)
+            n = len(years)
+
+            def get_row_safe(df, candidates, default=0.0):
+                if df.empty: return np.full(n, default, dtype=float)
+                for label in candidates:
+                    for idx in df.index:
+                        if label.lower() in idx.lower():
+                            return np.array(df.loc[idx].astype(float).values, dtype=float)
+                return np.full(n, default, dtype=float)
+
+            sales = get_row_safe(pnl, ["Sales", "Revenue"])
+            expenses = get_row_safe(pnl, ["Expenses"])
+            op_profit = get_row_safe(pnl, ["Operating Profit", "Financing Profit"])
+            other_inc = get_row_safe(pnl, ["Other Income"])
+            depr = get_row_safe(pnl, ["Depreciation"])
+            interest = get_row_safe(pnl, ["Interest"])
+            pbt = get_row_safe(pnl, ["Profit before tax"])
+            tax_pct = get_row_safe(pnl, ["Tax %"], default=25.0)
+            pat = get_row_safe(pnl, ["Net Profit"])
+            eps = get_row_safe(pnl, ["Basic EPS", "EPS"])
+
+            eff_tax = np.where(tax_pct > 1, tax_pct / 100.0, tax_pct)
+            nopat = op_profit * (1.0 - eff_tax)
+
+            eq_cap = get_row_safe(bs, ["Equity Capital"])
+            reserves = get_row_safe(bs, ["Reserves"])
+            total_equity = eq_cap + reserves
+            total_debt = get_row_safe(bs, ["Borrowings", "Debt"])
+            other_liab = get_row_safe(bs, ["Other Liabilities"])
+            total_assets = get_row_safe(bs, ["Total Assets"])
+            fix_assets = get_row_safe(bs, ["Fixed Assets", "Net Block"])
+            cwip = get_row_safe(bs, ["CWIP"])
+            investments = get_row_safe(bs, ["Investments"])
+            cash_bank = get_row_safe(bs, ["Cash & Bank"])
+            cash_investments = cash_bank + investments
+            invested_cap = total_equity + total_debt - cash_investments
+
+            cfo = get_row_safe(cf, ["Cash from Operating Activity"])
+            capex = np.zeros(n)
+            if len(depr) > 0: capex[0] = depr[0]
+            for i in range(1, n):
+                capex[i] = max((fix_assets[i] + cwip[i]) - (fix_assets[i-1] + cwip[i-1]) + depr[i], 0.0)
+            fcff = cfo - capex
+
+            mcap_val = float(meta.get("Market Cap", 0.0))
+            pe_ratio = np.where(pat != 0, mcap_val / pat, 0.0)
+            pb_ratio = np.where(total_equity != 0, mcap_val / total_equity, 0.0)
+            debt_to_equity = np.where(total_equity != 0, total_debt / total_equity, 0.0)
+            op_margin = np.where(sales != 0, op_profit / sales, 0.0)
+            roe = np.where(total_equity != 0, pat / total_equity, 0.0)
+            roce = np.where((total_assets - other_liab) != 0, op_profit / (total_assets - other_liab), 0.0)
+            roic = np.where(invested_cap != 0, nopat / invested_cap, 0.0)
+            accrual_ratio = np.where(total_assets != 0, (pat - cfo) / total_assets, 0.0)
+
+            f_scores = []
+            for i in range(1, n):
+                score = (
+                    int(pat[i] > 0) + int(cfo[i] > 0) +
+                    int((pat[i]/total_assets[i]) > (pat[i-1]/total_assets[i-1])) +
+                    int(cfo[i]/total_assets[i] > pat[i]/total_assets[i]) +
+                    int(total_debt[i]/total_assets[i] < total_debt[i-1]/total_assets[i-1]) +
+                    int(total_equity[i]/total_assets[i] > total_equity[i-1]/total_assets[i-1]) +
+                    int(sales[i]/fix_assets[i] > sales[i-1]/fix_assets[i-1]) +
+                    int(op_profit[i]/sales[i] > op_profit[i-1]/sales[i-1])
+                )
+                f_scores.append(score)
+            f_scores = [f_scores[0]] + f_scores
+
+            base_fcff = fcff[-1] if len(fcff) > 0 else 0.0
+            proj_fcff = []
+            curr = base_fcff
+            for yr in range(1, 11):
+                g = stage1_g if yr <= 5 else stage2_g
+                curr *= (1.0 + g)
+                proj_fcff.append(curr)
+
+            pv_fcff = [f / ((1.0 + wacc) ** idx) for idx, f in enumerate(proj_fcff, 1)]
+            sum_pv_fcf = sum(pv_fcff)
+            term_val = (proj_fcff[-1] * (1.0 + term_g) / (wacc - term_g)) if wacc > term_g else 0.0
+            pv_tv = term_val / ((1.0 + wacc) ** 10)
+            enterprise_val = sum_pv_fcf + pv_tv
+            net_debt = total_debt[-1] - cash_investments[-1] if len(total_debt) > 0 else 0.0
+            equity_val = enterprise_val - net_debt
+
+            cmp = float(meta.get("Current Price", 0.0))
+            mcap = float(meta.get("Market Cap", 0.0))
+            shares_cr = (mcap / cmp) if (cmp > 0 and mcap > 0) else (total_equity[-1] / 10.0 if len(total_equity) > 0 else 1.0)
+            fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
+            mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
+
+            st.success("✅ Full Financial & Valuation Model Generated!")
+            
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")
+            c2.metric("DCF Fair Value", f"₹{fair_value:,.2f}")
+            c3.metric("Margin of Safety", f"{mos:+.1%}")
+            c4.metric("10-Yr Cum FCFF", f"₹{np.sum(fcff):,.0f} Cr")
+
+            pnl_expanded = compute_comprehensive_metrics(pnl)
+            bs_expanded = compute_comprehensive_metrics(bs) if not bs.empty else pd.DataFrame()
+            cf_expanded = compute_comprehensive_metrics(cf) if not cf.empty else pd.DataFrame()
+            art_expanded = compute_comprehensive_metrics(quarters) if not quarters.empty else pd.DataFrame()
+
+            ratios_df = pd.DataFrame(
+                [pe_ratio, pb_ratio, debt_to_equity, op_margin*100, roe*100, roce*100, roic*100, accrual_ratio, f_scores], 
+                index=["P/E Ratio", "P/B Ratio", "Debt-to-Equity", "Operating Margin (%)", "ROE (%)", "ROCE (%)", "ROIC (%)", "Accrual Ratio", "Piotroski F-Score"], 
+                columns=years
+            )
+            
+            proj_years = [f"FY{int(years[-1][-2:]) + i}" for i in range(1, 11)] if years else []
+            dcf_df = pd.DataFrame([proj_fcff, pv_fcff], index=["Projected FCFF", "Present Value"], columns=proj_years)
+
+            tabs = st.tabs(["Income Statement", "Quarterly Results", "Balance Sheet", "Cash Flow", "Promoter Holding", "Ratios & Forensic", "10-Yr DCF Projections"])
+            with tabs[0]:
+                st.dataframe(style_financial_table(pnl_expanded))
+            with tabs[1]:
+                if not art_expanded.empty:
+                    st.dataframe(style_financial_table(art_expanded))
+                else:
+                    st.info("Quarterly data not available.")
+            with tabs[2]:
+                if not bs_expanded.empty:
+                    st.dataframe(style_financial_table(bs_expanded))
+                else:
+                    st.info("Balance sheet data not available.")
+            with tabs[3]:
+                if not cf_expanded.empty:
+                    st.dataframe(style_financial_table(cf_expanded))
+                else:
+                    st.info("Cash flow data not available.")
+            with tabs[4]:
+                st.subheader("👥 Shareholding / Promoter Holding Pattern (%)")
+                if not shareholding.empty:
+                    st.dataframe(shareholding.astype(float).style.format("{:,.2f}%"))
+                else:
+                    st.info("Shareholding data not available.")
+            with tabs[5]:
+                st.dataframe(ratios_df.style.format("{:,.2f}"))
+            with tabs[6]:
+                st.dataframe(dcf_df.style.format("{:,.2f}"))
+
+            wb = openpyxl.Workbook()
+            navy = "1B365D"
+            font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+            fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
+            fill_growth = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+            font_growth = Font(name="Calibri", size=11, bold=True)
+            fill_metric = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+            font_metric = Font(name="Calibri", size=11, italic=True)
+            align_center = Alignment(horizontal="center", vertical="center")
+
+            def write_expanded_df_to_sheet(sheet, df, title):
+                sheet.append([title])
+                sheet.append([])
+                headers = ["Metric"] + list(df.columns)
+                sheet.append(headers)
+                for c in range(1, len(headers) + 1):
+                    cell = sheet.cell(3, c)
+                    cell.font = font_hdr; cell.fill = fill_hdr; cell.alignment = align_center
+                
+                for idx, row in df.iterrows():
+                    row_data = [str(idx)] + [float(val) if isinstance(val, (int, float)) and not np.isnan(val) else str(val) for val in row.values]
+                    sheet.append(row_data)
+                    row_num = sheet.max_row
+                    if "YoY %" in str(idx):
+                        for col_num in range(1, len(row_data) + 1):
+                            cell = sheet.cell(row_num, col_num)
+                            cell.fill = fill_growth; cell.font = font_growth
+                    elif any(m in str(idx) for m in ["Mean", "Median", "CAGR", "Min", "Max"]):
+                        for col_num in range(1, len(row_data) + 1):
+                            cell = sheet.cell(row_num, col_num)
+                            cell.fill = fill_metric; cell.font = font_metric
+
+            sheets_info = [
+                ("P&L Statement", pnl_expanded),
+                ("Quarterly Results", art_expanded),
+                ("Balance Sheet", bs_expanded),
+                ("Cash Flow", cf_expanded)
+            ]
+
+            first_sheet = True
+            for title, df in sheets_info:
+                if not df.empty:
+                    if first_sheet:
+                        ws = wb.active
+                        ws.title = title[:31]
+                        first_sheet = False
+                    else:
+                        ws = wb.create_sheet(title=title[:31])

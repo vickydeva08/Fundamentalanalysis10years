@@ -296,6 +296,10 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         navy = "1B365D"
         font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
+        
+        # Highlight fill for Growth rows (Light Soft Yellow/Gray)
+        fill_growth = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+        font_growth = Font(name="Calibri", size=11, bold=True)
         align_center = Alignment(horizontal="center", vertical="center")
 
         def write_df_to_sheet(sheet, df, title):
@@ -310,6 +314,14 @@ if st.button("🚀 Run Valuation Model", type="primary"):
             for idx, row in df.iterrows():
                 row_data = [str(idx)] + [float(val) if isinstance(val, (int, float)) and not np.isnan(val) else str(val) for val in row.values]
                 sheet.append(row_data)
+                
+                # Apply highlight if it's a growth row
+                if "YoY/QoQ %" in str(idx):
+                    row_num = sheet.max_row
+                    for col_num in range(1, len(row_data) + 1):
+                        current_cell = sheet.cell(row_num, col_num)
+                        current_cell.fill = fill_growth
+                        current_cell.font = font_growth
 
         # Create separate sheets
         sheets_info = [

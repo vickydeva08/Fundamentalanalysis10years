@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 st.set_page_config(page_title="Advanced 10-Year Fundamental Analysis Model", layout="wide")
 
 st.title("📊 Advanced Financial Analysis & Valuation Model")
-st.markdown("Analyzes Annual Statements, Quarters, Balance Sheet, Cash Flow, Ratios, Promoter Holding, and calculates Mean, Median, CAGR, Min, Max, and YoY metrics.")
+st.markdown("Analyzes Annual Statements, Quarters, Balance Sheet, Cash Flow, Ratios, Promoter Holding, with Mean, Median, CAGR, Min, Max, and YoY columns.")
 
 url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/company/TCS/consolidated/")
 
@@ -113,48 +113,66 @@ def fetch_screener_data(screener_url):
     return meta, tables
 
 def compute_financial_metrics(df):
-    metrics_list = []
-    columns = df.columns
+    new_rows = []
+    new_index = []
+    
+    stat_cols = ["Mean", "Median", "CAGR (%)", "Min", "Max"]
+    base_columns = list(df.columns)
+    full_columns = base_columns + stat_cols
+    
     for idx, row in df.iterrows():
-        clean_row = pd.to_numeric(row, errors='coerce').dropna()
+        numeric_row = pd.to_numeric(row, errors='coerce')
+        clean_row = numeric_row.dropna()
         
-        metrics_list.append((idx, row.values))
-        
-        yoy_vals = [np.nan]
-        for i in range(1, len(row)):
-            val_prev = float(row.iloc[i-1])
-            val_curr = float(row.iloc[i])
-            if val_prev != 0 and not np.isnan(val_prev) and not np.isnan(val_curr):
-                yoy_vals.append((val_curr - val_prev) / abs(val_prev) * 100.0)
-            else:
-                yoy_vals.append(np.nan)
-        metrics_list.append((f"{idx} (YoY %)", yoy_vals))
-
+        mean_val, median_val, min_val, max_val, cagr_val = np.nan, np.nan, np.nan, np.nan, np.nan
         if not clean_row.empty and len(clean_row) > 0:
             mean_val = clean_row.mean()
             median_val = clean_row.median()
             min_val = clean_row.min()
             max_val = clean_row.max()
             
-            first_val = clean_row.iloc[0]
-            last_val = clean_row.iloc[-1]
-            n_periods = len(clean_row) - 1
-            
-            if first_val > 0 and last_val > 0 and n_periods > 0:
-                cagr_val = ((last_val / first_val) ** (1.0 / n_periods) - 1.0) * 100.0
-            elif first_val < 0 and last_val > 0:
-                cagr_val = 100.0
+            non_zero_clean = clean_row[clean_row != 0]
+            if not non_zero_clean.empty:
+                first_val = non_zero_clean.iloc[0]
+                last_val = non_zero_clean.iloc[-1]
+                n_periods = len(non_zero_clean) - 1
+                
+                if first_val > 0 and last_val > 0 and n_periods > 0:
+                    cagr_val = ((last_val / first_val) ** (1.0 / n_periods) - 1.0) * 100.0
+                elif first_val < 0 and last_val > 0:
+                    cagr_val = 100.0
+                elif first_val == 0:
+                    cagr_val = np.nan
+                else:
+                    cagr_val = -100.0 if last_val == 0 else np.nan
+        
+        main_vals = row.tolist() + [mean_val, median_val, cagr_val, min_val, max_val]
+        new_rows.append(main_vals)
+        new_index.append(idx)
+        
+        yoy_vals = [np.nan]
+        for i in range(1, len(row)):
+            val_prev = float(numeric_row.iloc[i-1])
+            val_curr = float(numeric_row.iloc[i])
+            if val_prev != 0 and not np.isnan(val_prev) and not np.isnan(val_curr):
+                yoy_vals.append((val_curr - val_prev) / abs(val_prev) * 100.0)
             else:
-                cagr_val = np.nan
-        else:
-            mean_val, median_val, min_val, max_val, cagr_val = np.nan, np.nan, np.nan, np.nan, np.nan
-
-        for metric_name, metric_val in [("Mean", mean_val), ("Median", median_val), ("CAGR (%)", cagr_val), ("Min", min_val), ("Max", max_val)]:
-            metrics_list.append((f"{idx} ({metric_name})", [metric_val] * len(columns)))
-
-    new_index = [m[0] for m in metrics_list]
-    new_data = [m[1] for m in metrics_list]
-    return pd.DataFrame(new_data, index=new_index, columns=columns)
+                yoy_vals.append(np.nan)
+        
+        yoy_numeric = pd.Series(yoy_vals, index=base_columns)
+        yoy_clean = yoy_numeric.dropna()
+        yoy_mean, yoy_median, yoy_min, yoy_max, yoy_cagr = np.nan, np.nan, np.nan, np.nan, np.nan
+        if not yoy_clean.empty:
+            yoy_mean = yoy_clean.mean()
+            yoy_median = yoy_clean.median()
+            yoy_min = yoy_clean.min()
+            yoy_max = yoy_clean.max()
+            
+        yoy_full_vals = yoy_vals + [yoy_mean, yoy_median, yoy_cagr, yoy_min, yoy_max]
+        new_rows.append(yoy_full_vals)
+        new_index.append(f"{idx} (YoY %)")
+        
+    return pd.DataFrame(new_rows, index=new_index, columns=full_columns)
 
 def style_financial_table(df):
     def highlight_rows(x):
@@ -162,8 +180,6 @@ def style_financial_table(df):
         for idx in x.index:
             if "YoY %" in idx:
                 df_styled.loc[idx] = 'background-color: #FFF2CC; font-weight: bold;'
-            elif any(m in idx for m in ["Mean", "Median", "CAGR", "Min", "Max"]):
-                df_styled.loc[idx] = 'background-color: #E2EFDA; font-style: italic;'
         return df_styled
     return df.style.apply(highlight_rows, axis=None).format(lambda v: f"{v:,.2f}" if isinstance(v, (int, float)) and not np.isnan(v) else str(v))
 
@@ -330,8 +346,6 @@ if st.button("🚀 Run Advanced Valuation Model", type="primary"):
         fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
         fill_growth = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
         font_growth = Font(name="Calibri", size=11, bold=True)
-        fill_metric = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-        font_metric = Font(name="Calibri", size=11, italic=True)
         align_center = Alignment(horizontal="center", vertical="center")
 
         def write_expanded_df_to_sheet(sheet, df, title):
@@ -351,10 +365,6 @@ if st.button("🚀 Run Advanced Valuation Model", type="primary"):
                     for col_num in range(1, len(row_data) + 1):
                         cell = sheet.cell(row_num, col_num)
                         cell.fill = fill_growth; cell.font = font_growth
-                elif any(m in str(idx) for m in ["Mean", "Median", "CAGR", "Min", "Max"]):
-                    for col_num in range(1, len(row_data) + 1):
-                        cell = sheet.cell(row_num, col_num)
-                        cell.fill = fill_metric; cell.font = font_metric
 
         sheets_info = [
             ("P&L Statement", pnl_expanded),

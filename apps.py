@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 st.set_page_config(page_title="10-Year Fundamental Analysis & DCF Model", layout="wide")
 
 st.title("📊 10-Year Fundamental Analysis & DCF Valuation Model")
-st.markdown("Enter Screener.in URL to analyze Income Statement, Balance Sheet, Cash Flow, Ratios, and 10-Year DCF Projections.")
+st.markdown("Enter Screener.in URL to analyze Income Statement, Balance Sheet, Cash Flow, Ratios with Debt-to-Equity, EPS, and 10-Year DCF Projections.")
 
 url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/company/TCS/consolidated/")
 
@@ -108,6 +108,7 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         pbt = get_row(pnl, ["Profit before tax"])
         tax_pct = get_row(pnl, ["Tax %"])
         pat = get_row(pnl, ["Net Profit"])
+        eps = get_row(pnl, ["Basic EPS", "EPS"])
 
         eff_tax = np.where(tax_pct > 1, tax_pct / 100.0, tax_pct)
         nopat = op_profit * (1.0 - eff_tax)
@@ -135,6 +136,7 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         mcap_val = float(meta.get("Market Cap", 0.0))
         pe_ratio = np.where(pat != 0, mcap_val / pat, 0.0)
         pb_ratio = np.where(total_equity != 0, mcap_val / total_equity, 0.0)
+        debt_to_equity = np.where(total_equity != 0, total_debt / total_equity, 0.0)
         op_margin = np.where(sales != 0, op_profit / sales, 0.0)
         roe = np.where(total_equity != 0, pat / total_equity, 0.0)
         roce = np.where((total_assets - other_liab) != 0, op_profit / (total_assets - other_liab), 0.0)
@@ -185,7 +187,7 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         c3.metric("Margin of Safety", f"{mos:+.1%}")
         c4.metric("10-Yr Cum FCFF", f"₹{np.sum(fcff):,.0f} Cr")
 
-        pnl_df = compute_yoy_dataframe([sales, expenses, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat], ["Revenue", "Expenses", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Tax Rate (%)", "NOPAT", "Net Income"], years)
+        pnl_df = compute_yoy_dataframe([sales, expenses, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat, eps], ["Revenue", "Expenses", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Tax Rate (%)", "NOPAT", "Net Income", "EPS"], years)
         bs_df = compute_yoy_dataframe([total_debt, total_equity, total_assets, cash_investments, invested_cap], ["Total Debt", "Total Equity", "Total Assets", "Cash & Investments", "Invested Capital"], years)
         cf_df = compute_yoy_dataframe([cfo, capex, fcff], ["CFO", "CapEx", "Free Cash Flow (FCFF)"], years)
 
@@ -193,35 +195,4 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         with tabs[0]:
             st.dataframe(pnl_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
         with tabs[1]:
-            st.dataframe(bs_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
-        with tabs[2]:
-            st.dataframe(cf_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
-        with tabs[3]:
-            st.dataframe(pd.DataFrame([pe_ratio, pb_ratio, op_margin*100, roe*100, roce*100, roic*100, accrual_ratio, f_scores], index=["P/E Ratio", "P/B Ratio", "Operating Margin (%)", "ROE (%)", "ROCE (%)", "ROIC (%)", "Accrual Ratio", "Piotroski F-Score"], columns=years).style.format("{:,.2f}"))
-        with tabs[4]:
-            proj_years = [f"FY{int(years[-1][-2:]) + i}" for i in range(1, 11)]
-            st.dataframe(pd.DataFrame([proj_fcff, pv_fcff], index=["Projected FCFF", "Present Value"], columns=proj_years).style.format("{:,.2f}"))
-
-        wb = openpyxl.Workbook()
-        wb.remove(wb.active)
-        navy = "1B365D"
-        font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
-
-        ws1 = wb.create_sheet("Executive Summary")
-        ws1["A1"] = "AUTOMATED FUNDAMENTAL & DCF SUMMARY"
-        ws1.append([])
-        ws1.append(["Metric", "Value"])
-        for c in range(1, 3):
-            ws1.cell(3, c).font = font_hdr; ws1.cell(3, c).fill = fill_hdr
-
-        summary_rows = [["CMP", cmp], ["Fair Value", fair_value], ["Margin of Safety (%)", mos], ["Enterprise Value (₹ Cr)", enterprise_val], ["Equity Value (₹ Cr)", equity_val]]
-        for r in summary_rows: ws1.append(r)
-
-        excel_buffer = io.BytesIO()
-        wb.save(excel_buffer)
-        excel_buffer.seek(0)
-        st.download_button("📥 Download Excel Model", data=excel_buffer, file_name="Fundamental_Analysis_DCF_Model.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    except Exception as e:
-        st.error(f"Error processing URL: {e}")
+            st.dataframe(bs_df.style.format(lambda v: f"{v:,.

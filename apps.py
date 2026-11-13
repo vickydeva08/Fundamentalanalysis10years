@@ -7,10 +7,10 @@ import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
-st.set_page_config(page_title="Advanced 10-Year Fundamental Analysis Model", layout="wide")
+st.set_page_config(page_title="Comprehensive 10-Year Financial Analysis Model", layout="wide")
 
-st.title("📊 Advanced Financial Analysis & Valuation Model")
-st.markdown("Analyzes Annual Statements, Quarters, Balance Sheet, Cash Flow, Ratios, Promoter Holding, and calculates Mean, Median, CAGR, Min, Max, and YoY metrics.")
+st.title("📊 Comprehensive Financial Analysis, DCF & Promoter Model")
+st.markdown("Analyzes Annual Statements, Quarters, Balance Sheet, Cash Flow, Ratios, Promoter Holding, with YoY, CAGR, Mean, Median, Min, Max, and Multi-Sheet Excel Export.")
 
 url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/company/TCS/consolidated/")
 
@@ -112,16 +112,17 @@ def fetch_screener_data(screener_url):
 
     return meta, tables
 
-def compute_financial_metrics(df):
+def compute_comprehensive_metrics(df):
     new_rows = {}
     for idx, row in df.iterrows():
-        clean_row = pd.to_numeric(row, errors='coerce').dropna()
+        numeric_row = pd.to_numeric(row, errors='coerce')
+        clean_row = numeric_row.dropna()
         new_rows[idx] = row.tolist()
         
         yoy_vals = [np.nan]
         for i in range(1, len(row)):
-            val_prev = float(row.iloc[i-1])
-            val_curr = float(row.iloc[i])
+            val_prev = float(numeric_row.iloc[i-1])
+            val_curr = float(numeric_row.iloc[i])
             if val_prev != 0 and not np.isnan(val_prev) and not np.isnan(val_curr):
                 yoy_vals.append((val_curr - val_prev) / abs(val_prev) * 100.0)
             else:
@@ -134,14 +135,20 @@ def compute_financial_metrics(df):
             min_val = clean_row.min()
             max_val = clean_row.max()
             
-            first_val = clean_row.iloc[0]
-            last_val = clean_row.iloc[-1]
-            n_periods = len(clean_row) - 1
-            
-            if first_val > 0 and last_val > 0 and n_periods > 0:
-                cagr_val = ((last_val / first_val) ** (1.0 / n_periods) - 1.0) * 100.0
-            elif first_val < 0 and last_val > 0:
-                cagr_val = 100.0
+            non_zero_clean = clean_row[clean_row != 0]
+            if not non_zero_clean.empty:
+                first_val = non_zero_clean.iloc[0]
+                last_val = non_zero_clean.iloc[-1]
+                n_periods = len(non_zero_clean) - 1
+                
+                if first_val > 0 and last_val > 0 and n_periods > 0:
+                    cagr_val = ((last_val / first_val) ** (1.0 / n_periods) - 1.0) * 100.0
+                elif first_val < 0 and last_val > 0:
+                    cagr_val = 100.0
+                elif first_val == 0:
+                    cagr_val = np.nan
+                else:
+                    cagr_val = -100.0 if last_val == 0 else np.nan
             else:
                 cagr_val = np.nan
         else:
@@ -150,7 +157,7 @@ def compute_financial_metrics(df):
         for metric_name, metric_val in [("Mean", mean_val), ("Median", median_val), ("CAGR (%)", cagr_val), ("Min", min_val), ("Max", max_val)]:
             new_rows[f"{idx} ({metric_name})"] = [metric_val] * len(row)
 
-    return pd.DataFrame(new_rows).T
+    return pd.DataFrame(new_rows, columns=df.columns).T
 
 def style_financial_table(df):
     def highlight_rows(x):
@@ -163,7 +170,7 @@ def style_financial_table(df):
         return df_styled
     return df.style.apply(highlight_rows, axis=None).format(lambda v: f"{v:,.2f}" if isinstance(v, (int, float)) and not np.isnan(v) else str(v))
 
-if st.button("🚀 Run Advanced Valuation Model", type="primary"):
+if st.button("🚀 Run Full Valuation Model", type="primary"):
     try:
         meta, tables = fetch_screener_data(url)
         pnl = tables["profit-loss"]
@@ -240,23 +247,18 @@ if st.button("🚀 Run Advanced Valuation Model", type="primary"):
             f_scores.append(score)
         f_scores = [f_scores[0]] + f_scores
 
-        wacc_val = wacc
-        stage1_g_val = stage1_g
-        stage2_g_val = stage2_g
-        term_g_val = term_g
-
         base_fcff = fcff[-1]
         proj_fcff = []
         curr = base_fcff
         for yr in range(1, 11):
-            g = stage1_g_val if yr <= 5 else stage2_g_val
+            g = stage1_g if yr <= 5 else stage2_g
             curr *= (1.0 + g)
             proj_fcff.append(curr)
 
-        pv_fcff = [f / ((1.0 + wacc_val) ** idx) for idx, f in enumerate(proj_fcff, 1)]
+        pv_fcff = [f / ((1.0 + wacc) ** idx) for idx, f in enumerate(proj_fcff, 1)]
         sum_pv_fcf = sum(pv_fcff)
-        term_val = proj_fcff[-1] * (1.0 + term_g_val) / (wacc_val - term_g_val)
-        pv_tv = term_val / ((1.0 + wacc_val) ** 10)
+        term_val = proj_fcff[-1] * (1.0 + term_g) / (wacc - term_g)
+        pv_tv = term_val / ((1.0 + wacc) ** 10)
         enterprise_val = sum_pv_fcf + pv_tv
         net_debt = total_debt[-1] - cash_investments[-1]
         equity_val = enterprise_val - net_debt
@@ -267,7 +269,7 @@ if st.button("🚀 Run Advanced Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Advanced Model Generated Successfully!")
+        st.success("✅ Full Financial & Valuation Model Generated!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")
@@ -282,10 +284,10 @@ if st.button("🚀 Run Advanced Valuation Model", type="primary"):
         cf_base = pd.DataFrame([cfo, capex, fcff], 
                                index=["CFO", "CapEx", "Free Cash Flow (FCFF)"], columns=years)
 
-        pnl_expanded = compute_financial_metrics(pnl_base)
-        bs_expanded = compute_financial_metrics(bs_base)
-        cf_expanded = compute_financial_metrics(cf_base)
-        art_expanded = compute_financial_metrics(quarters) if not quarters.empty else pd.DataFrame()
+        pnl_expanded = compute_comprehensive_metrics(pnl_base)
+        bs_expanded = compute_comprehensive_metrics(bs_base)
+        cf_expanded = compute_comprehensive_metrics(cf_base)
+        art_expanded = compute_comprehensive_metrics(quarters) if not quarters.empty else pd.DataFrame()
 
         ratios_df = pd.DataFrame(
             [pe_ratio, pb_ratio, debt_to_equity, op_margin*100, roe*100, roce*100, roic*100, accrual_ratio, f_scores], 
@@ -367,7 +369,7 @@ if st.button("🚀 Run Advanced Valuation Model", type="primary"):
         excel_buffer = io.BytesIO()
         wb.save(excel_buffer)
         excel_buffer.seek(0)
-        st.download_button("📥 Download Advanced Excel Model", data=excel_buffer, file_name="Advanced_Financial_Analysis_Model.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("📥 Download Advanced Excel Model", data=excel_buffer, file_name="Complete_Financial_Analysis_Model.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     except Exception as e:
         st.error(f"Error processing URL: {e}")

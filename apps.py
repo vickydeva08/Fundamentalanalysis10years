@@ -306,3 +306,8 @@ if st.button("🚀 Run Valuation Model", type="primary"):
 
         excel_buffer = io.BytesIO()
         wb.save(excel_buffer)
+        excel_buffer.seek(0)
+        st.download_button("📥 Download Excel Model", data=excel_buffer, file_name="Fundamental_Analysis_DCF_Model.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    except Exception as e:
+        st.error(f"Error processing URL: {e}")

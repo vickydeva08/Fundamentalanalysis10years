@@ -113,10 +113,12 @@ def fetch_screener_data(screener_url):
     return meta, tables
 
 def compute_financial_metrics(df):
-    new_rows = {}
+    metrics_list = []
+    columns = df.columns
     for idx, row in df.iterrows():
         clean_row = pd.to_numeric(row, errors='coerce').dropna()
-        new_rows[idx] = row.tolist()
+        
+        metrics_list.append((idx, row.values))
         
         yoy_vals = [np.nan]
         for i in range(1, len(row)):
@@ -126,7 +128,7 @@ def compute_financial_metrics(df):
                 yoy_vals.append((val_curr - val_prev) / abs(val_prev) * 100.0)
             else:
                 yoy_vals.append(np.nan)
-        new_rows[f"{idx} (YoY %)"] = yoy_vals
+        metrics_list.append((f"{idx} (YoY %)", yoy_vals))
 
         if not clean_row.empty and len(clean_row) > 0:
             mean_val = clean_row.mean()
@@ -148,9 +150,11 @@ def compute_financial_metrics(df):
             mean_val, median_val, min_val, max_val, cagr_val = np.nan, np.nan, np.nan, np.nan, np.nan
 
         for metric_name, metric_val in [("Mean", mean_val), ("Median", median_val), ("CAGR (%)", cagr_val), ("Min", min_val), ("Max", max_val)]:
-            new_rows[f"{idx} ({metric_name})"] = [metric_val] * len(row)
+            metrics_list.append((f"{idx} ({metric_name})", [metric_val] * len(columns)))
 
-    return pd.DataFrame(new_rows).T
+    new_index = [m[0] for m in metrics_list]
+    new_data = [m[1] for m in metrics_list]
+    return pd.DataFrame(new_data, index=new_index, columns=columns)
 
 def style_financial_table(df):
     def highlight_rows(x):

@@ -5,9 +5,8 @@ import pandas as pd
 import numpy as np
 import io
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Font, PatternFill
 
-# Fixed: layout="wide" instead of page_layout="wide"
 st.set_page_config(page_title="10-Year Fundamental Analysis & DCF Model", layout="wide")
 
 st.title("📊 10-Year Fundamental Analysis & DCF Valuation Model")
@@ -101,8 +100,16 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
             return np.full(n, default, dtype=float)
 
         sales = get_row(pnl, ["Sales", "Revenue"])
-        cogs_items = get_row(pnl, ["Raw Material"]) + get_row(pnl, ["Power"]) + get_row(pnl, ["Employee"]) + get_row(pnl, ["Other Mfr"])
-        sga_items = get_row(pnl, ["Selling"]) + get_row(pnl, ["Other Expenses"])
+        raw_mat = get_row(pnl, ["Raw Material"])
+        power = get_row(pnl, ["Power"])
+        employee = get_row(pnl, ["Employee"])
+        other_mfr = get_row(pnl, ["Other Mfr"])
+        cogs_items = raw_mat + power + employee + other_mfr
+        
+        selling = get_row(pnl, ["Selling"])
+        other_exp = get_row(pnl, ["Other Expenses"])
+        sga_items = selling + other_exp
+        
         op_profit = get_row(pnl, ["Operating Profit", "Financing Profit"])
         other_inc = get_row(pnl, ["Other Income"])
         depr = get_row(pnl, ["Depreciation"])
@@ -179,7 +186,7 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Comprehensive Model Generated Successfully with YoY Changes!")
+        st.success("✅ Comprehensive Model Generated Successfully!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")

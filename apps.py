@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 st.set_page_config(page_title="10-Year Fundamental Analysis & DCF Model", layout="wide")
 
 st.title("📊 10-Year Fundamental Analysis & DCF Valuation Model")
-st.markdown("Enter Screener.in URL to calculate accurate COGS, SG&A, YoY Growth, and 10-Year DCF Projections.")
+st.markdown("Enter Screener.in URL to analyze Income Statement, Balance Sheet, Cash Flow, Ratios, and 10-Year DCF Projections.")
 
 url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/company/TCS/consolidated/")
 
@@ -83,7 +83,7 @@ def compute_yoy_dataframe(data_arrays, index_labels, years):
         index_with_yoy.append(f"{label} (YoY %)")
     return pd.DataFrame(rows, columns=years, index=index_with_yoy)
 
-if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
+if st.button("🚀 Run Valuation Model", type="primary"):
     try:
         meta, tables = fetch_screener_data(url)
         pnl = tables["profit-loss"]
@@ -93,25 +93,14 @@ if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
         n = len(years)
 
         def get_row(df, candidates, default=0.0):
-            found_arr = None
             for label in candidates:
                 for idx in df.index:
                     if label.lower() in idx.lower():
-                        arr = np.array(df.loc[idx].astype(float).values, dtype=float)
-                        if found_arr is None:
-                            found_arr = arr
-                        else:
-                            found_arr += arr
-            if found_arr is not None:
-                return found_arr
+                        return np.array(df.loc[idx].astype(float).values, dtype=float)
             return np.full(n, default, dtype=float)
 
         sales = get_row(pnl, ["Sales", "Revenue"])
-        
-        # Comprehensive keywords for COGS and SG&A
-        cogs_items = get_row(pnl, ["material", "raw", "power", "fuel", "manufacturing", "purchase", "production", "direct", "goods", "cost of"])
-        sga_items = get_row(pnl, ["employee", "selling", "distribution", "admin", "rent", "general", "salary", "wages", "other expense"])
-        
+        expenses = get_row(pnl, ["Expenses"])
         op_profit = get_row(pnl, ["Operating Profit", "Financing Profit"])
         other_inc = get_row(pnl, ["Other Income"])
         depr = get_row(pnl, ["Depreciation"])
@@ -188,7 +177,7 @@ if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Enhanced Model Generated Successfully[cite: 1]!")
+        st.success("✅ Model Generated Successfully[cite: 1]!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")
@@ -196,7 +185,7 @@ if st.button("🚀 Run Enhanced Valuation Model", type="primary"):
         c3.metric("Margin of Safety", f"{mos:+.1%}")
         c4.metric("10-Yr Cum FCFF", f"₹{np.sum(fcff):,.0f} Cr")
 
-        pnl_df = compute_yoy_dataframe([sales, cogs_items, sga_items, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat], ["Revenue", "COGS (Calculated)", "SG&A (Calculated)", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Tax Rate (%)", "NOPAT", "Net Income"], years)
+        pnl_df = compute_yoy_dataframe([sales, expenses, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat], ["Revenue", "Expenses", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Tax Rate (%)", "NOPAT", "Net Income"], years)
         bs_df = compute_yoy_dataframe([total_debt, total_equity, total_assets, cash_investments, invested_cap], ["Total Debt", "Total Equity", "Total Assets", "Cash & Investments", "Invested Capital"], years)
         cf_df = compute_yoy_dataframe([cfo, capex, fcff], ["CFO", "CapEx", "Free Cash Flow (FCFF)"], years)
 

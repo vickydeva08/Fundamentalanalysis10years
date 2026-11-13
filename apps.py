@@ -7,10 +7,10 @@ import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
-st.set_page_config(page_title="10-Year & 10-Quarter Fundamental Analysis & DCF Model", layout="wide")
+st.set_page_config(page_title="10-Year Fundamental & Promoter Analysis Model", layout="wide")
 
-st.title("📊 Fundamental Analysis & DCF Model (Annual & Quarterly)")
-st.markdown("Enter Screener.in URL to analyze Annual Statements, Last 10 Quarters, Balance Sheet, Cash Flow, Ratios, EPS, and 10-Year DCF Projections.")
+st.title("📊 Fundamental Analysis, DCF & Promoter Holding Model")
+st.markdown("Enter Screener.in URL to analyze Annual Statements, Quarters, Balance Sheet, Cash Flow, Ratios, Promoter Holding Chart, and 10-Year DCF Projections.")
 
 url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/company/TCS/consolidated/")
 
@@ -87,9 +87,31 @@ def fetch_screener_data(screener_url):
                         parsed.append(0.0)
                 q_rows.append(parsed)
             q_df = pd.DataFrame(q_rows, columns=q_cols).set_index("Metric")
-            # Get last 10 quarters
             q_cols_list = [c for c in q_df.columns if c.upper() != "TTM"][-10:]
             tables["quarters"] = q_df[q_cols_list]
+
+    # Fetching Shareholding Pattern Table
+    sh_sec = soup.find("section", id="shareholding")
+    if sh_sec:
+        sh_table = sh_sec.find("table")
+        if sh_table:
+            sh_cols = [th.get_text(strip=True) for th in sh_table.select("thead th")]
+            sh_cols[0] = "Metric"
+            sh_rows = []
+            for tr in sh_table.select("tbody tr"):
+                cells = [td.get_text(strip=True).replace("+", "").strip() for td in tr.find_all("td")]
+                if not cells or len(cells) != len(sh_cols): continue
+                parsed = [cells[0]]
+                for val in cells[1:]:
+                    clean = val.replace(",", "").replace("%", "")
+                    try:
+                        num = float(clean)
+                        parsed.append(num / 100.0 if "%" in val else num)
+                    except ValueError:
+                        parsed.append(0.0)
+                sh_rows.append(parsed)
+            sh_df = pd.DataFrame(sh_rows, columns=sh_cols).set_index("Metric")
+            tables["shareholding"] = sh_df
 
     return meta, tables
 
@@ -106,7 +128,7 @@ def compute_yoy_dataframe(data_arrays, index_labels, years):
             else:
                 yoy.append((arr[i] - arr[i-1]) / abs(arr[i-1]) * 100.0)
         rows.append(yoy)
-        index_with_yoy.append(f"{label} (QoQ/YoY %)")
+        index_with_yoy.append(f"{label} (YoY/QoQ %)")
     return pd.DataFrame(rows, columns=years, index=index_with_yoy)
 
 if st.button("🚀 Run Valuation Model", type="primary"):
@@ -116,6 +138,7 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         bs = tables["balance-sheet"]
         cf = tables["cash-flow"]
         quarters = tables.get("quarters", pd.DataFrame())
+        shareholding = tables.get("shareholding", pd.DataFrame())
         
         years = list(pnl.columns)
         n = len(years)
@@ -219,7 +242,7 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         bs_df = compute_yoy_dataframe([total_debt, total_equity, total_assets, cash_investments, invested_cap], ["Total Debt", "Total Equity", "Total Assets", "Cash & Investments", "Invested Capital"], years)
         cf_df = compute_yoy_dataframe([cfo, capex, fcff], ["CFO", "CapEx", "Free Cash Flow (FCFF)"], years)
 
-        tabs = st.tabs(["Income Statement (Annual)", "Last 10 Quarters", "Balance Sheet", "Cash Flow", "Ratios & Forensic", "10-Yr DCF Projections"])
+        tabs = st.tabs(["Income Statement (Annual)", "Last 10 Quarters", "Balance Sheet", "Cash Flow", "Promoter Holding", "Ratios & Forensic", "10-Yr DCF Projections"])
         with tabs[0]:
             st.dataframe(pnl_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
         with tabs[1]:
@@ -232,31 +255,18 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         with tabs[3]:
             st.dataframe(cf_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
         with tabs[4]:
-            st.dataframe(pd.DataFrame([pe_ratio, pb_ratio, debt_to_equity, op_margin*100, roe*100, roce*100, roic*100, accrual_ratio, f_scores], index=["P/E Ratio", "P/B Ratio", "Debt-to-Equity", "Operating Margin (%)", "ROE (%)", "ROCE (%)", "ROIC (%)", "Accrual Ratio", "Piotroski F-Score"], columns=years).style.format("{:,.2f}"))
+            st.subheader("👥 Shareholding / Promoter Holding Pattern")
+            if not shareholding.empty:
+                st.dataframe(shareholding.style.format(lambda v: f"{v:,.2f}" if isinstance(v, (int, float)) and not np.isnan(v) else str(v)))
+                
+                # Latest quarter pie chart for shareholding
+                latest_q_col = shareholding.columns[-1]
+                sh_series = shareholding[latest_q_col].apply(lambda x: float(x) if isinstance(x, (int, float)) else 0.0)
+                sh_series = sh_series[sh_series > 0]
+                
+                st.markdown(f"### 🥧 Shareholding Distribution ({latest_q_col})")
+                st.bar_chart(sh_series)
+            else:
+                st.info("Shareholding data not available for this URL.")
         with tabs[5]:
-            proj_years = [f"FY{int(years[-1][-2:]) + i}" for i in range(1, 11)]
-            st.dataframe(pd.DataFrame([proj_fcff, pv_fcff], index=["Projected FCFF", "Present Value"], columns=proj_years).style.format("{:,.2f}"))
-
-        wb = openpyxl.Workbook()
-        wb.remove(wb.active)
-        navy = "1B365D"
-        font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
-
-        ws1 = wb.create_sheet("Executive Summary")
-        ws1["A1"] = "AUTOMATED FUNDAMENTAL & DCF SUMMARY"
-        ws1.append([])
-        ws1.append(["Metric", "Value"])
-        for c in range(1, 3):
-            ws1.cell(3, c).font = font_hdr; ws1.cell(3, c).fill = fill_hdr
-
-        summary_rows = [["CMP", cmp], ["Fair Value", fair_value], ["Margin of Safety (%)", mos], ["Enterprise Value (₹ Cr)", enterprise_val], ["Equity Value (₹ Cr)", equity_val]]
-        for r in summary_rows: ws1.append(r)
-
-        excel_buffer = io.BytesIO()
-        wb.save(excel_buffer)
-        excel_buffer.seek(0)
-        st.download_button("📥 Download Excel Model", data=excel_buffer, file_name="Fundamental_Analysis_DCF_Model.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    except Exception as e:
-        st.error(f"Error processing URL: {e}")
+            st.dataframe(pd.DataFrame([pe_ratio, pb_ratio, debt_to_equity, op_margin*100, roe*100, roce*100, roic*100, accrual_ratio, f_scores], index=["P/E Ratio", "P/B Ratio", "

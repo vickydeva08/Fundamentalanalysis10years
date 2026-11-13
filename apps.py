@@ -228,7 +228,7 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Model Generated Successfully[cite: 1]!")
+        st.success("✅ Model Generated Successfully!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")
@@ -257,6 +257,9 @@ if st.button("🚀 Run Valuation Model", type="primary"):
             index=["P/E Ratio", "P/B Ratio", "Debt-to-Equity", "Operating Margin (%)", "ROE (%)", "ROCE (%)", "ROIC (%)", "Accrual Ratio", "Piotroski F-Score"], 
             columns=years
         )
+        
+        proj_years = [f"FY{int(years[-1][-2:]) + i}" for i in range(1, 11)]
+        dcf_df = pd.DataFrame([proj_fcff, pv_fcff], index=["Projected FCFF", "Present Value"], columns=proj_years)
 
         tabs = st.tabs(["Income Statement (Annual)", "Last 10 Quarters", "Balance Sheet", "Cash Flow", "Promoter Holding", "Ratios & Forensic", "10-Yr DCF Projections"])
         with tabs[0]:
@@ -286,24 +289,43 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         with tabs[5]:
             st.dataframe(ratios_df.style.format("{:,.2f}"))
         with tabs[6]:
-            proj_years = [f"FY{int(years[-1][-2:]) + i}" for i in range(1, 11)]
-            st.dataframe(pd.DataFrame([proj_fcff, pv_fcff], index=["Projected FCFF", "Present Value"], columns=proj_years).style.format("{:,.2f}"))
+            st.dataframe(dcf_df.style.format("{:,.2f}"))
 
         wb = openpyxl.Workbook()
         wb.remove(wb.active)
         navy = "1B365D"
         font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
+        align_center = Alignment(horizontal="center", vertical="center")
 
-        ws1 = wb.create_sheet("Executive Summary")
-        ws1["A1"] = "AUTOMATED FUNDAMENTAL & DCF SUMMARY"
-        ws1.append([])
-        ws1.append(["Metric", "Value"])
-        for c in range(1, 3):
-            ws1.cell(3, c).font = font_hdr; ws1.cell(3, c).fill = fill_hdr
+        def write_df_to_sheet(sheet, df, title):
+            sheet.append([title])
+            sheet.append([])
+            headers = ["Metric"] + list(df.columns)
+            sheet.append(headers)
+            for c in range(1, len(headers) + 1):
+                cell = sheet.cell(3, c)
+                cell.font = font_hdr; cell.fill = fill_hdr; cell.alignment = align_center
+            
+            for idx, row in df.iterrows():
+                row_data = [str(idx)] + [float(val) if isinstance(val, (int, float)) and not np.isnan(val) else str(val) for val in row.values]
+                sheet.append(row_data)
 
-        summary_rows = [["CMP", cmp], ["Fair Value", fair_value], ["Margin of Safety (%)", mos], ["Enterprise Value (₹ Cr)", enterprise_val], ["Equity Value (₹ Cr)", equity_val]]
-        for r in summary_rows: ws1.append(r)
+        # Create separate sheets
+        sheets_info = [
+            ("Income Statement (Annual)", pnl_df),
+            ("Last 10 Quarters", quarters),
+            ("Balance Sheet", bs_df),
+            ("Cash Flow", cf_df),
+            ("Promoter Holding", shareholding),
+            ("Ratios & Forensic", ratios_df),
+            ("10-Yr DCF Projections", dcf_df)
+        ]
+
+        for title, df in sheets_info:
+            if not df.empty:
+                ws = wb.create_sheet(title=title[:31]) # Excel sheet name limit is 31 chars
+                write_df_to_sheet(ws, df, title)
 
         excel_buffer = io.BytesIO()
         wb.save(excel_buffer)

@@ -279,4 +279,36 @@ if st.button("🚀 Run Valuation Model", type="primary"):
                 sh_series = shareholding[latest_q_col].apply(lambda x: float(x) if isinstance(x, (int, float)) else 0.0)
                 sh_series = sh_series[sh_series > 0]
                 
-                st.markdown(f"### 🥧 Shareholding Distribution ({latest_
+                st.markdown(f"### 🥧 Shareholding Distribution ({latest_q_col})")
+                st.bar_chart(sh_series)
+            else:
+                st.info("Shareholding data not available for this URL.")
+        with tabs[5]:
+            st.dataframe(ratios_df.style.format("{:,.2f}"))
+        with tabs[6]:
+            proj_years = [f"FY{int(years[-1][-2:]) + i}" for i in range(1, 11)]
+            st.dataframe(pd.DataFrame([proj_fcff, pv_fcff], index=["Projected FCFF", "Present Value"], columns=proj_years).style.format("{:,.2f}"))
+
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
+        navy = "1B365D"
+        font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
+
+        ws1 = wb.create_sheet("Executive Summary")
+        ws1["A1"] = "AUTOMATED FUNDAMENTAL & DCF SUMMARY"
+        ws1.append([])
+        ws1.append(["Metric", "Value"])
+        for c in range(1, 3):
+            ws1.cell(3, c).font = font_hdr; ws1.cell(3, c).fill = fill_hdr
+
+        summary_rows = [["CMP", cmp], ["Fair Value", fair_value], ["Margin of Safety (%)", mos], ["Enterprise Value (₹ Cr)", enterprise_val], ["Equity Value (₹ Cr)", equity_val]]
+        for r in summary_rows: ws1.append(r)
+
+        excel_buffer = io.BytesIO()
+        wb.save(excel_buffer)
+        excel_buffer.seek(0)
+        st.download_button("📥 Download Excel Model", data=excel_buffer, file_name="Fundamental_Analysis_DCF_Model.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    except Exception as e:
+        st.error(f"Error processing URL: {e}")

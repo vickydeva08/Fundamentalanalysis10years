@@ -7,10 +7,10 @@ import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
-st.set_page_config(page_title="10-Year Fundamental Analysis & DCF Model", layout="wide")
+st.set_page_config(page_title="10-Year & 10-Quarter Fundamental Analysis & DCF Model", layout="wide")
 
-st.title("📊 10-Year Fundamental Analysis & DCF Valuation Model")
-st.markdown("Enter Screener.in URL to analyze Income Statement, Balance Sheet, Cash Flow, Ratios with Debt-to-Equity, EPS, and 10-Year DCF Projections.")
+st.title("📊 Fundamental Analysis & DCF Model (Annual & Quarterly)")
+st.markdown("Enter Screener.in URL to analyze Annual Statements, Last 10 Quarters, Balance Sheet, Cash Flow, Ratios, EPS, and 10-Year DCF Projections.")
 
 url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/company/TCS/consolidated/")
 
@@ -41,6 +41,7 @@ def fetch_screener_data(screener_url):
                 meta[n_el.get_text(strip=True)] = v_el.get_text(strip=True)
 
     tables = {}
+    # Fetching Annual Tables
     for sec_id in ["profit-loss", "balance-sheet", "cash-flow"]:
         sec = soup.find("section", id=sec_id)
         if not sec: continue
@@ -65,6 +66,31 @@ def fetch_screener_data(screener_url):
         fy_cols = [c for c in df.columns if c.upper() != "TTM"][-10:]
         tables[sec_id] = df[fy_cols]
 
+    # Fetching Last 10 Quarters Table
+    q_sec = soup.find("section", id="quarters")
+    if q_sec:
+        q_table = q_sec.find("table")
+        if q_table:
+            q_cols = [th.get_text(strip=True) for th in q_table.select("thead th")]
+            q_cols[0] = "Metric"
+            q_rows = []
+            for tr in q_table.select("tbody tr"):
+                cells = [td.get_text(strip=True).replace("+", "").strip() for td in tr.find_all("td")]
+                if not cells or len(cells) != len(q_cols): continue
+                parsed = [cells[0]]
+                for val in cells[1:]:
+                    clean = val.replace(",", "").replace("%", "")
+                    try:
+                        num = float(clean)
+                        parsed.append(num / 100.0 if "%" in val else num)
+                    except ValueError:
+                        parsed.append(0.0)
+                q_rows.append(parsed)
+            q_df = pd.DataFrame(q_rows, columns=q_cols).set_index("Metric")
+            # Get last 10 quarters
+            q_cols_list = [c for c in q_df.columns if c.upper() != "TTM"][-10:]
+            tables["quarters"] = q_df[q_cols_list]
+
     return meta, tables
 
 def compute_yoy_dataframe(data_arrays, index_labels, years):
@@ -80,7 +106,7 @@ def compute_yoy_dataframe(data_arrays, index_labels, years):
             else:
                 yoy.append((arr[i] - arr[i-1]) / abs(arr[i-1]) * 100.0)
         rows.append(yoy)
-        index_with_yoy.append(f"{label} (YoY %)")
+        index_with_yoy.append(f"{label} (QoQ/YoY %)")
     return pd.DataFrame(rows, columns=years, index=index_with_yoy)
 
 if st.button("🚀 Run Valuation Model", type="primary"):
@@ -89,6 +115,8 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         pnl = tables["profit-loss"]
         bs = tables["balance-sheet"]
         cf = tables["cash-flow"]
+        quarters = tables.get("quarters", pd.DataFrame())
+        
         years = list(pnl.columns)
         n = len(years)
 
@@ -97,7 +125,7 @@ if st.button("🚀 Run Valuation Model", type="primary"):
                 for idx in df.index:
                     if label.lower() in idx.lower():
                         return np.array(df.loc[idx].astype(float).values, dtype=float)
-            return np.full(n, default, dtype=float)
+            return np.full(df.shape[1] if not df.empty else n, default, dtype=float)
 
         sales = get_row(pnl, ["Sales", "Revenue"])
         expenses = get_row(pnl, ["Expenses"])
@@ -191,16 +219,21 @@ if st.button("🚀 Run Valuation Model", type="primary"):
         bs_df = compute_yoy_dataframe([total_debt, total_equity, total_assets, cash_investments, invested_cap], ["Total Debt", "Total Equity", "Total Assets", "Cash & Investments", "Invested Capital"], years)
         cf_df = compute_yoy_dataframe([cfo, capex, fcff], ["CFO", "CapEx", "Free Cash Flow (FCFF)"], years)
 
-        tabs = st.tabs(["Income Statement", "Balance Sheet", "Cash Flow", "Ratios & Forensic", "10-Yr DCF Projections"])
+        tabs = st.tabs(["Income Statement (Annual)", "Last 10 Quarters", "Balance Sheet", "Cash Flow", "Ratios & Forensic", "10-Yr DCF Projections"])
         with tabs[0]:
             st.dataframe(pnl_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
         with tabs[1]:
-            st.dataframe(bs_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
+            if not quarters.empty:
+                st.dataframe(quarters.style.format(lambda v: f"{v:,.2f}" if isinstance(v, (int, float)) and not np.isnan(v) else str(v)))
+            else:
+                st.info("Quarterly data not available for this URL.")
         with tabs[2]:
-            st.dataframe(cf_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
+            st.dataframe(bs_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
         with tabs[3]:
-            st.dataframe(pd.DataFrame([pe_ratio, pb_ratio, debt_to_equity, op_margin*100, roe*100, roce*100, roic*100, accrual_ratio, f_scores], index=["P/E Ratio", "P/B Ratio", "Debt-to-Equity", "Operating Margin (%)", "ROE (%)", "ROCE (%)", "ROIC (%)", "Accrual Ratio", "Piotroski F-Score"], columns=years).style.format("{:,.2f}"))
+            st.dataframe(cf_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
         with tabs[4]:
+            st.dataframe(pd.DataFrame([pe_ratio, pb_ratio, debt_to_equity, op_margin*100, roe*100, roce*100, roic*100, accrual_ratio, f_scores], index=["P/E Ratio", "P/B Ratio", "Debt-to-Equity", "Operating Margin (%)", "ROE (%)", "ROCE (%)", "ROIC (%)", "Accrual Ratio", "Piotroski F-Score"], columns=years).style.format("{:,.2f}"))
+        with tabs[5]:
             proj_years = [f"FY{int(years[-1][-2:]) + i}" for i in range(1, 11)]
             st.dataframe(pd.DataFrame([proj_fcff, pv_fcff], index=["Projected FCFF", "Present Value"], columns=proj_years).style.format("{:,.2f}"))
 

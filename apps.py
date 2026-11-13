@@ -16,13 +16,13 @@ url = st.text_input("Screener.in Company URL:", value="https://www.screener.in/c
 
 COL1, COL2, COL3, COL4 = st.columns(4)
 with COL1:
-    wacc = st.slider("WACC / Discount Rate", 0.08, 0.18, 0.125, 0.005)
+    wacc = st.slider("WACC / Discount Rate", 0.01, 0.40, 0.125, 0.005)
 with COL2:
-    stage1_g = st.slider("Stage 1 Growth (Y1-Y5)", 0.04, 0.20, 0.08, 0.005)
+    stage1_g = st.slider("Stage 1 Growth (Y1-Y5)", -0.10, 0.50, 0.08, 0.005)
 with COL3:
-    stage2_g = st.slider("Stage 2 Growth (Y6-Y10)", 0.03, 0.15, 0.06, 0.005)
+    stage2_g = st.slider("Stage 2 Growth (Y6-Y10)", -0.10, 0.40, 0.06, 0.005)
 with COL4:
-    term_g = st.slider("Terminal Growth Rate (g)", 0.02, 0.06, 0.045, 0.005)
+    term_g = st.slider("Terminal Growth Rate (g)", 0.00, 0.15, 0.045, 0.005)
 
 @st.cache_data(show_spinner=True)
 def fetch_screener_data(screener_url):
@@ -237,77 +237,4 @@ if st.button("🚀 Run Valuation Model", type="primary"):
 
         pnl_df = compute_yoy_dataframe(
             [sales, expenses, op_profit, other_inc, depr, interest, pbt, eff_tax*100, nopat, pat, eps], 
-            ["Revenue", "Expenses", "Operating EBITDA", "Other Income", "Depreciation", "Interest", "PBT", "Tax Rate (%)", "NOPAT", "Net Income", "EPS"], 
-            years
-        )
-        bs_df = compute_yoy_dataframe(
-            [total_debt, total_equity, total_assets, cash_investments, invested_cap], 
-            ["Total Debt", "Total Equity", "Total Assets", "Cash & Investments", "Invested Capital"], 
-            years
-        )
-        cf_df = compute_yoy_dataframe(
-            [cfo, capex, fcff], 
-            ["CFO", "CapEx", "Free Cash Flow (FCFF)"], 
-            years
-        )
-
-        ratios_df = pd.DataFrame(
-            [pe_ratio, pb_ratio, debt_to_equity, op_margin*100, roe*100, roce*100, roic*100, accrual_ratio, f_scores], 
-            index=["P/E Ratio", "P/B Ratio", "Debt-to-Equity", "Operating Margin (%)", "ROE (%)", "ROCE (%)", "ROIC (%)", "Accrual Ratio", "Piotroski F-Score"], 
-            columns=years
-        )
-
-        tabs = st.tabs(["Income Statement (Annual)", "Last 10 Quarters", "Balance Sheet", "Cash Flow", "Promoter Holding", "Ratios & Forensic", "10-Yr DCF Projections"])
-        with tabs[0]:
-            st.dataframe(pnl_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
-        with tabs[1]:
-            if not quarters.empty:
-                st.dataframe(quarters.style.format(lambda v: f"{v:,.2f}%" if isinstance(v, (int, float)) and not np.isnan(v) else str(v)))
-            else:
-                st.info("Quarterly data not available for this URL.")
-        with tabs[2]:
-            st.dataframe(bs_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
-        with tabs[3]:
-            st.dataframe(cf_df.style.format(lambda v: f"{v:,.2f}" if not np.isnan(v) else "N/A"))
-        with tabs[4]:
-            st.subheader("👥 Shareholding / Promoter Holding Pattern (%)")
-            if not shareholding.empty:
-                st.dataframe(shareholding.style.format(lambda v: f"{v:,.2f}%" if isinstance(v, (int, float)) and not np.isnan(v) else str(v)))
-                
-                latest_q_col = shareholding.columns[-1]
-                sh_series = shareholding[latest_q_col].apply(lambda x: float(x) if isinstance(x, (int, float)) else 0.0)
-                sh_series = sh_series[sh_series > 0]
-                
-                st.markdown(f"### 🥧 Shareholding Distribution ({latest_q_col})")
-                st.bar_chart(sh_series)
-            else:
-                st.info("Shareholding data not available for this URL.")
-        with tabs[5]:
-            st.dataframe(ratios_df.style.format("{:,.2f}"))
-        with tabs[6]:
-            proj_years = [f"FY{int(years[-1][-2:]) + i}" for i in range(1, 11)]
-            st.dataframe(pd.DataFrame([proj_fcff, pv_fcff], index=["Projected FCFF", "Present Value"], columns=proj_years).style.format("{:,.2f}"))
-
-        wb = openpyxl.Workbook()
-        wb.remove(wb.active)
-        navy = "1B365D"
-        font_hdr = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        fill_hdr = PatternFill(start_color=navy, end_color=navy, fill_type="solid")
-
-        ws1 = wb.create_sheet("Executive Summary")
-        ws1["A1"] = "AUTOMATED FUNDAMENTAL & DCF SUMMARY"
-        ws1.append([])
-        ws1.append(["Metric", "Value"])
-        for c in range(1, 3):
-            ws1.cell(3, c).font = font_hdr; ws1.cell(3, c).fill = fill_hdr
-
-        summary_rows = [["CMP", cmp], ["Fair Value", fair_value], ["Margin of Safety (%)", mos], ["Enterprise Value (₹ Cr)", enterprise_val], ["Equity Value (₹ Cr)", equity_val]]
-        for r in summary_rows: ws1.append(r)
-
-        excel_buffer = io.BytesIO()
-        wb.save(excel_buffer)
-        excel_buffer.seek(0)
-        st.download_button("📥 Download Excel Model", data=excel_buffer, file_name="Fundamental_Analysis_DCF_Model.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    except Exception as e:
-        st.error(f"Error processing URL: {e}")
+            ["Revenue", "Expenses",

@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import io
 import openpyxl
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Font, PatternFill, Alignment
 
 st.set_page_config(page_title="10-Year Fundamental Analysis & DCF Model", layout="wide")
 
@@ -186,7 +186,7 @@ if st.button("🚀 Run Comprehensive Valuation Model", type="primary"):
         fair_value = equity_val / shares_cr if shares_cr > 0 else 0.0
         mos = ((fair_value - cmp) / fair_value) if fair_value > 0 else 0.0
 
-        st.success("✅ Comprehensive Model Generated Successfully!")
+        st.success("✅ Model Generated Successfully!")
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price (CMP)", f"₹{cmp:,.2f}")
